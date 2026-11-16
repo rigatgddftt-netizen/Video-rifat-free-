@@ -37,6 +37,8 @@ button.secondary{background:var(--accent2);}
 button:disabled{opacity:.5;cursor:not-allowed;}
 #controls{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
 #status{text-align:center;font-size:.85rem;color:var(--muted);min-height:20px;}
+.progress-bar { width: 100%; height: 6px; background: #333; border-radius: 3px; margin-top: 10px; display: none; }
+.progress-fill { height: 100%; background: var(--accent); width: 0%; border-radius: 3px; transition: width 0.3s; }
 .tabs{display:flex;gap:6px;margin-bottom:10px;}
 .tab{flex:1;text-align:center;padding:8px;border-radius:8px;background:#2a2a2a;cursor:pointer;font-size:.85rem;}
 .tab.active{background:var(--accent);color:#fff;}
@@ -95,6 +97,7 @@ button:disabled{opacity:.5;cursor:not-allowed;}
       <button id="exportBtn">⬇️ এক্সপোর্ট করুন</button>
       <button class="secondary" id="resetBtn">নতুন ভিডিও</button>
     </div>
+    <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
     <div id="status"></div>
   </div>
 </div>
@@ -108,6 +111,8 @@ const overlayText = document.getElementById('overlayText');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const statusEl = document.getElementById('status');
+const progressBar = document.getElementById('progressBar');
+const progressFill = document.getElementById('progressFill');
 
 dropZone.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', e => { if(e.target.files[0]) loadFile(e.target.files[0]); });
@@ -193,6 +198,7 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
   video.style.filter='none';
   overlayText.textContent='';
   fileInput.value='';
+  progressBar.style.display = 'none';
 });
 
 // Export: redraw frames to canvas (with filter + text) between trim points, record via MediaRecorder
@@ -200,36 +206,50 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
   const exportBtn = document.getElementById('exportBtn');
   exportBtn.disabled = true;
   statusEl.textContent = 'এক্সপোর্ট প্রস্তুত হচ্ছে...';
+  progressBar.style.display = 'block';
+  progressFill.style.width = '0%';
 
   const startT = parseFloat(document.getElementById('startRange').value);
   const endT = parseFloat(document.getElementById('endRange').value);
   if(endT <= startT){
     statusEl.textContent = '⚠️ শেষ সময় শুরুর চেয়ে বড় হতে হবে।';
     exportBtn.disabled = false;
+    progressBar.style.display = 'none';
     return;
   }
 
   canvas.width = video.videoWidth || 640;
   canvas.height = video.videoHeight || 360;
 
+  // ফ্রেম রেট কমানো হলো যাতে মেমরি কম লাগে
   const stream = canvas.captureStream(30);
-  let mimeType = 'video/webm;codecs=vp9';
-  if(!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'video/webm';
-  const recorder = new MediaRecorder(stream, {mimeType});
+  
+  // MP4 সাপোর্ট চেক করা
+  let mimeType = 'video/mp4';
+  if(!MediaRecorder.isTypeSupported(mimeType)){
+    mimeType = 'video/webm;codecs=vp9';
+    if(!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'video/webm';
+  }
+
+  const recorder = new MediaRecorder(stream, {mimeType: mimeType});
   const chunks = [];
+  
   recorder.ondataavailable = e => { if(e.data.size>0) chunks.push(e.data); };
 
   recorder.onstop = () => {
-    const blob = new Blob(chunks, {type:'video/webm'});
+    const blob = new Blob(chunks, {type: mimeType});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'edited-video.webm';
+    // ফাইল এক্সটেনশন সঠিক করা হলো
+    const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+    a.download = 'edited-video.' + ext;
     document.body.appendChild(a);
     a.click();
     a.remove();
-    statusEl.textContent = '✅ ডাউনলোড সম্পন্ন!';
+    statusEl.textContent = '✅ ডাউনলোড সম্পন্ন! গ্যালারিতে চেক করুন।';
     exportBtn.disabled = false;
+    progressBar.style.display = 'none';
   };
 
   video.currentTime = startT;
@@ -259,6 +279,11 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
       ctx.shadowBlur = 8;
       ctx.fillText(txt, canvas.width/2, canvas.height/2);
     }
+    
+    // প্রোগ্রেস আপডেট
+    const percent = ((video.currentTime - startT) / (endT - startT)) * 100;
+    progressFill.style.width = percent + '%';
+
     requestAnimationFrame(drawFrame);
   }
   drawFrame();
