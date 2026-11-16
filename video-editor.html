@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ভিডিও এডিটর</title>
+<style>
+:root{
+  --bg:#121212; --panel:#1e1e1e; --accent:#ff4d6d; --accent2:#4ea8de;
+  --text:#f1f1f1; --muted:#9a9a9a; --border:#2d2d2d;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);}
+h1{font-size:1.1rem;text-align:center;margin:10px 0;color:var(--accent);}
+#app{max-width:480px;margin:0 auto;padding:10px;}
+#dropZone{border:2px dashed var(--border);border-radius:12px;padding:30px 10px;text-align:center;color:var(--muted);cursor:pointer;}
+#dropZone:hover{border-color:var(--accent);}
+.hidden{display:none !important;}
+#editor{display:flex;flex-direction:column;gap:14px;}
+#videoWrap{position:relative;background:#000;border-radius:10px;overflow:hidden;}
+video{width:100%;display:block;max-height:50vh;}
+#overlayText{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  color:#fff;font-size:1.5rem;font-weight:bold;text-shadow:0 2px 6px rgba(0,0,0,.8);
+  pointer-events:none;white-space:nowrap;max-width:90%;overflow:hidden;text-overflow:ellipsis;}
+canvas{display:none;}
+.panel{background:var(--panel);border-radius:10px;padding:12px;}
+.row{display:flex;align-items:center;gap:8px;margin:8px 0;}
+label{font-size:.85rem;color:var(--muted);width:90px;flex-shrink:0;}
+input[type=range]{flex:1;accent-color:var(--accent);}
+input[type=text]{flex:1;background:#2a2a2a;border:1px solid var(--border);color:var(--text);
+  border-radius:6px;padding:8px;font-size:.9rem;}
+select{background:#2a2a2a;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px;flex:1;}
+button{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px 16px;
+  font-weight:bold;cursor:pointer;font-size:.9rem;}
+button.secondary{background:var(--accent2);}
+button:disabled{opacity:.5;cursor:not-allowed;}
+#controls{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
+#status{text-align:center;font-size:.85rem;color:var(--muted);min-height:20px;}
+.tabs{display:flex;gap:6px;margin-bottom:10px;}
+.tab{flex:1;text-align:center;padding:8px;border-radius:8px;background:#2a2a2a;cursor:pointer;font-size:.85rem;}
+.tab.active{background:var(--accent);color:#fff;}
+.tabContent{display:none;}
+.tabContent.active{display:block;}
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>🎬 কুইক ভিডিও এডিটর</h1>
+
+  <div id="dropZone">
+    📁 ভিডিও ফাইল সিলেক্ট করতে ক্লিক করুন<br>
+    <input type="file" id="fileInput" accept="video/*" style="display:none">
+  </div>
+
+  <div id="editor" class="hidden">
+    <div id="videoWrap">
+      <video id="video" controls playsinline></video>
+      <div id="overlayText"></div>
+    </div>
+    <canvas id="canvas"></canvas>
+
+    <div class="tabs">
+      <div class="tab active" data-tab="trim">✂️ ট্রিম</div>
+      <div class="tab" data-tab="filter">🎨 ফিল্টার</div>
+      <div class="tab" data-tab="text">🔤 টেক্সট</div>
+    </div>
+
+    <div class="panel">
+      <div class="tabContent active" id="tab-trim">
+        <div class="row"><label>শুরু</label><input type="range" id="startRange" min="0" max="100" value="0"><span id="startVal">0s</span></div>
+        <div class="row"><label>শেষ</label><input type="range" id="endRange" min="0" max="100" value="100"><span id="endVal">0s</span></div>
+        <button class="secondary" id="previewTrim">ট্রিম প্রিভিউ চালান</button>
+      </div>
+      <div class="tabContent" id="tab-filter">
+        <div class="row"><label>ব্রাইটনেস</label><input type="range" id="brightness" min="50" max="150" value="100"></div>
+        <div class="row"><label>কনট্রাস্ট</label><input type="range" id="contrast" min="50" max="150" value="100"></div>
+        <div class="row"><label>স্যাচুরেশন</label><input type="range" id="saturate" min="0" max="200" value="100"></div>
+        <div class="row"><label>প্রিসেট</label>
+          <select id="preset">
+            <option value="none">কোনো প্রিসেট না</option>
+            <option value="bw">সাদাকালো</option>
+            <option value="vintage">ভিনটেজ</option>
+            <option value="vivid">ভিভিড</option>
+          </select>
+        </div>
+      </div>
+      <div class="tabContent" id="tab-text">
+        <div class="row"><label>লেখা</label><input type="text" id="overlayInput" placeholder="এখানে টেক্সট লিখুন"></div>
+        <div class="row"><label>সাইজ</label><input type="range" id="textSize" min="12" max="48" value="24"></div>
+      </div>
+    </div>
+
+    <div id="controls">
+      <button id="exportBtn">⬇️ এক্সপোর্ট করুন</button>
+      <button class="secondary" id="resetBtn">নতুন ভিডিও</button>
+    </div>
+    <div id="status"></div>
+  </div>
+</div>
+
+<script>
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const editor = document.getElementById('editor');
+const video = document.getElementById('video');
+const overlayText = document.getElementById('overlayText');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const statusEl = document.getElementById('status');
+
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => { if(e.target.files[0]) loadFile(e.target.files[0]); });
+
+let objectUrl = null;
+let duration = 0;
+
+function loadFile(file){
+  if(objectUrl) URL.revokeObjectURL(objectUrl);
+  objectUrl = URL.createObjectURL(file);
+  video.src = objectUrl;
+  dropZone.classList.add('hidden');
+  editor.classList.remove('hidden');
+  video.onloadedmetadata = () => {
+    duration = video.duration;
+    document.getElementById('startRange').max = duration;
+    document.getElementById('endRange').max = duration;
+    document.getElementById('endRange').value = duration;
+    updateTrimLabels();
+  };
+}
+
+// Tabs
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.tabContent').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('tab-'+t.dataset.tab).classList.add('active');
+  });
+});
+
+function updateTrimLabels(){
+  const s = parseFloat(document.getElementById('startRange').value);
+  const e = parseFloat(document.getElementById('endRange').value);
+  document.getElementById('startVal').textContent = s.toFixed(1)+'s';
+  document.getElementById('endVal').textContent = e.toFixed(1)+'s';
+}
+document.getElementById('startRange').addEventListener('input', updateTrimLabels);
+document.getElementById('endRange').addEventListener('input', updateTrimLabels);
+
+document.getElementById('previewTrim').addEventListener('click', () => {
+  const s = parseFloat(document.getElementById('startRange').value);
+  const e = parseFloat(document.getElementById('endRange').value);
+  video.currentTime = s;
+  video.play();
+  const stopAt = () => {
+    if(video.currentTime >= e){
+      video.pause();
+      video.removeEventListener('timeupdate', stopAt);
+    }
+  };
+  video.addEventListener('timeupdate', stopAt);
+});
+
+function applyFilter(){
+  const b = document.getElementById('brightness').value;
+  const c = document.getElementById('contrast').value;
+  const s = document.getElementById('saturate').value;
+  let filterStr = `brightness(${b}%) contrast(${c}%) saturate(${s}%)`;
+  const preset = document.getElementById('preset').value;
+  if(preset==='bw') filterStr += ' grayscale(100%)';
+  if(preset==='vintage') filterStr += ' sepia(60%)';
+  if(preset==='vivid') filterStr += ' saturate(180%) contrast(120%)';
+  video.style.filter = filterStr;
+}
+['brightness','contrast','saturate','preset'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', applyFilter);
+  document.getElementById(id).addEventListener('change', applyFilter);
+});
+
+document.getElementById('overlayInput').addEventListener('input', e=>{
+  overlayText.textContent = e.target.value;
+});
+document.getElementById('textSize').addEventListener('input', e=>{
+  overlayText.style.fontSize = e.target.value+'px';
+});
+
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  editor.classList.add('hidden');
+  dropZone.classList.remove('hidden');
+  video.pause();
+  video.style.filter='none';
+  overlayText.textContent='';
+  fileInput.value='';
+});
+
+// Export: redraw frames to canvas (with filter + text) between trim points, record via MediaRecorder
+document.getElementById('exportBtn').addEventListener('click', async () => {
+  const exportBtn = document.getElementById('exportBtn');
+  exportBtn.disabled = true;
+  statusEl.textContent = 'এক্সপোর্ট প্রস্তুত হচ্ছে...';
+
+  const startT = parseFloat(document.getElementById('startRange').value);
+  const endT = parseFloat(document.getElementById('endRange').value);
+  if(endT <= startT){
+    statusEl.textContent = '⚠️ শেষ সময় শুরুর চেয়ে বড় হতে হবে।';
+    exportBtn.disabled = false;
+    return;
+  }
+
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 360;
+
+  const stream = canvas.captureStream(30);
+  let mimeType = 'video/webm;codecs=vp9';
+  if(!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'video/webm';
+  const recorder = new MediaRecorder(stream, {mimeType});
+  const chunks = [];
+  recorder.ondataavailable = e => { if(e.data.size>0) chunks.push(e.data); };
+
+  recorder.onstop = () => {
+    const blob = new Blob(chunks, {type:'video/webm'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'edited-video.webm';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    statusEl.textContent = '✅ ডাউনলোড সম্পন্ন!';
+    exportBtn.disabled = false;
+  };
+
+  video.currentTime = startT;
+  await new Promise(res => { video.onseeked = res; });
+
+  recorder.start();
+  video.play();
+
+  const txt = overlayText.textContent;
+  const txtSize = parseInt(document.getElementById('textSize').value);
+  const cssFilter = video.style.filter;
+
+  function drawFrame(){
+    if(video.currentTime >= endT || video.paused || video.ended){
+      video.pause();
+      recorder.stop();
+      return;
+    }
+    ctx.filter = cssFilter || 'none';
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.filter = 'none';
+    if(txt){
+      ctx.font = `bold ${txtSize*2}px sans-serif`;
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.shadowColor = 'rgba(0,0,0,0.8)';
+      ctx.shadowBlur = 8;
+      ctx.fillText(txt, canvas.width/2, canvas.height/2);
+    }
+    requestAnimationFrame(drawFrame);
+  }
+  drawFrame();
+});
+</script>
+</body>
+</html>
